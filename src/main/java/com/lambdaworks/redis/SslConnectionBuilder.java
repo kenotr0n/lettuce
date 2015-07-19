@@ -127,7 +127,6 @@ public class SslConnectionBuilder extends ConnectionBuilder {
                                     pingCommand = INITIALIZING_CMD_BUILDER.ping();
                                     pingBeforeActivate(pingCommand, initializedFuture, ctx, handlers);
                                 } else {
-                                    initializedFuture.set(true);
                                     ctx.fireChannelActive();
                                 }
                             } else {
@@ -140,12 +139,20 @@ public class SslConnectionBuilder extends ConnectionBuilder {
                                 ctx.channel().close();
                             }
                         }
+
+                        if (evt instanceof ConnectionEvents.Activated) {
+                            if (!initializedFuture.isDone()) {
+                                initializedFuture.set(true);
+                            }
+                        }
+
                         super.userEventTriggered(ctx, evt);
                     }
 
                     @Override
                     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-                        if (cause instanceof SSLHandshakeException || cause.getCause() instanceof SSLException) {
+
+                        if (!initializedFuture.isDone()) {
                             initializedFuture.setException(cause);
                         }
                         super.exceptionCaught(ctx, cause);

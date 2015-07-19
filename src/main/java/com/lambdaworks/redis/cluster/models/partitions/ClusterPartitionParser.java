@@ -12,7 +12,7 @@ import com.lambdaworks.redis.RedisException;
 import com.lambdaworks.redis.RedisURI;
 
 /**
- * Parser for node information output (CLUSTER NODES).
+ * Parser for node information output of {@code CLUSTER NODES} and {@code CLUSTER SLAVES}.
  * 
  * @author <a href="mailto:mpaluch@paluch.biz">Mark Paluch</a>
  * @since 3.0
@@ -62,10 +62,12 @@ public class ClusterPartitionParser {
                 RedisClusterNode partition = parseNode(node);
                 result.addPartition(partition);
             }
+
         } catch (Exception e) {
             throw new RedisException("Cannot parse " + nodes, e);
         }
 
+        result.updateCache();
         return result;
     }
 

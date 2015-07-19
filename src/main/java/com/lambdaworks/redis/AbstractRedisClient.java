@@ -17,8 +17,8 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.lambdaworks.redis.protocol.CommandHandler;
 import com.lambdaworks.redis.pubsub.PubSubCommandHandler;
-
 import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.*;
 import io.netty.channel.group.ChannelGroup;
 import io.netty.channel.group.ChannelGroupFuture;
@@ -26,8 +26,9 @@ import io.netty.channel.group.DefaultChannelGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.util.HashedWheelTimer;
+import io.netty.util.concurrent.DefaultEventExecutorGroup;
+import io.netty.util.concurrent.EventExecutorGroup;
 import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.GlobalEventExecutor;
 import io.netty.util.internal.SystemPropertyUtil;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
@@ -37,9 +38,11 @@ import io.netty.util.internal.logging.InternalLoggerFactory;
  * @since 3.0
  */
 public abstract class AbstractRedisClient {
+
     protected static final InternalLogger logger = InternalLoggerFactory.getInstance(RedisClient.class);
 
     private static final int DEFAULT_EVENT_LOOP_THREADS;
+    public static final PooledByteBufAllocator BUF_ALLOCATOR = PooledByteBufAllocator.DEFAULT;
 
     static {
         DEFAULT_EVENT_LOOP_THREADS = Math.max(1,
@@ -56,6 +59,8 @@ public abstract class AbstractRedisClient {
     @Deprecated
     protected EventLoopGroup eventLoopGroup;
 
+    protected EventExecutorGroup genericWorkerPool;
+
     protected final Map<Class<? extends EventLoopGroup>, EventLoopGroup> eventLoopGroups;
     protected final HashedWheelTimer timer;
     protected final ChannelGroup channels;
@@ -68,7 +73,8 @@ public abstract class AbstractRedisClient {
     protected AbstractRedisClient() {
         timer = new HashedWheelTimer();
         eventLoopGroups = new ConcurrentHashMap<Class<? extends EventLoopGroup>, EventLoopGroup>();
-        channels = new DefaultChannelGroup(GlobalEventExecutor.INSTANCE);
+        genericWorkerPool = new DefaultEventExecutorGroup(DEFAULT_EVENT_LOOP_THREADS);
+        channels = new DefaultChannelGroup(genericWorkerPool.next());
         timer.start();
         unit = TimeUnit.SECONDS;
     }
@@ -109,6 +115,9 @@ public abstract class AbstractRedisClient {
             Supplier<SocketAddress> socketAddressSupplier, ConnectionBuilder connectionBuilder, RedisURI redisURI) {
 
         Bootstrap redisBootstrap = new Bootstrap();
+        redisBootstrap.option(ChannelOption.WRITE_BUFFER_HIGH_WATER_MARK, 32 * 1024);
+        redisBootstrap.option(ChannelOption.WRITE_BUFFER_LOW_WATER_MARK, 8 * 1024);
+        redisBootstrap.option(ChannelOption.ALLOCATOR, BUF_ALLOCATOR);
 
         if (redisURI == null) {
             redisBootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) unit.toMillis(timeout));
@@ -122,6 +131,7 @@ public abstract class AbstractRedisClient {
         connectionBuilder.bootstrap(redisBootstrap);
         connectionBuilder.channelGroup(channels).connectionEvents(connectionEvents).timer(timer);
         connectionBuilder.commandHandler(handler).socketAddressSupplier(socketAddressSupplier).connection(connection);
+        connectionBuilder.workerPool(genericWorkerPool);
 
     }
 
@@ -260,6 +270,7 @@ public abstract class AbstractRedisClient {
         List<Future<?>> closeFutures = Lists.newArrayList();
         ChannelGroupFuture closeFuture = channels.close();
 
+        closeFutures.add(genericWorkerPool.shutdownGracefully(quietPeriod, timeout, timeUnit));
         closeFutures.add(closeFuture);
 
         for (EventLoopGroup eventExecutors : eventLoopGroups.values()) {

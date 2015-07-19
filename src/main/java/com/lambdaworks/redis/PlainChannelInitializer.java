@@ -6,7 +6,6 @@ import java.util.concurrent.Future;
 import com.google.common.util.concurrent.SettableFuture;
 import com.lambdaworks.redis.codec.Utf8StringCodec;
 import com.lambdaworks.redis.protocol.Command;
-import com.lambdaworks.redis.protocol.CommandHandler;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
@@ -53,15 +52,16 @@ class PlainChannelInitializer extends io.netty.channel.ChannelInitializer<Channe
                 }
 
                 @Override
-                public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-                    super.channelRead(ctx, msg);
-                }
-
-                @Override
                 public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
                     if (evt instanceof ConnectionEvents.Close) {
                         if (ctx.channel().isOpen()) {
                             ctx.channel().close();
+                        }
+                    }
+
+                    if (evt instanceof ConnectionEvents.Activated) {
+                        if (!initializedFuture.isDone()) {
+                            initializedFuture.set(true);
                         }
                     }
                     super.userEventTriggered(ctx, evt);
@@ -74,9 +74,6 @@ class PlainChannelInitializer extends io.netty.channel.ChannelInitializer<Channe
                         pingCommand = INITIALIZING_CMD_BUILDER.ping();
                         pingBeforeActivate(pingCommand, initializedFuture, ctx, handlers);
                     } else {
-                        if (!initializedFuture.isDone()) {
-                            initializedFuture.set(true);
-                        }
                         super.channelActive(ctx);
                     }
                 }
@@ -101,13 +98,7 @@ class PlainChannelInitializer extends io.netty.channel.ChannelInitializer<Channe
             final ChannelHandlerContext ctx, final List<ChannelHandler> handlers) throws Exception {
         cmd.addListener(new PingResponseListener(initializedFuture, cmd, ctx), ctx.executor());
 
-        for (ChannelHandler handler : handlers) {
-            if (handler instanceof CommandHandler) {
-                CommandHandler ch = (CommandHandler) handler;
-                ch.write(ctx, cmd, ctx.newPromise());
-                ctx.flush();
-            }
-        }
+        ctx.channel().writeAndFlush(cmd);
     }
 
     static void removeIfExists(ChannelPipeline pipeline, Class<? extends ChannelHandler> handlerClass) {

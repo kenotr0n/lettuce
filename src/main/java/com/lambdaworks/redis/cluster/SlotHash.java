@@ -21,6 +21,11 @@ public class SlotHash {
      */
     public static final byte SUBKEY_END = Chars.toByteArray('}')[1];
 
+    /**
+     * Number of redis cluster slot hashes.
+     */
+    public static final int SLOT_COUNT = 16384;
+
     private SlotHash() {
 
     }
@@ -52,7 +57,7 @@ public class SlotHash {
                 System.arraycopy(key, start + 1, finalKey, 0, finalKey.length);
             }
         }
-        return CRC16.crc16(finalKey) % 16384;
+        return CRC16.crc16(finalKey) % SLOT_COUNT;
     }
 
     private static int indexOf(byte[] haystack, byte needle) {

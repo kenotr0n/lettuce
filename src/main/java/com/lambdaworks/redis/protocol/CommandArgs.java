@@ -25,8 +25,9 @@ public class CommandArgs<K, V> {
     private final RedisCodec<K, V> codec;
     private ByteBuffer buffer;
     private int count;
-    private final List<K> keys = new ArrayList<K>();
-    private final List<ProtocolKeyword> keywords = new ArrayList<ProtocolKeyword>();
+    private final List<ProtocolKeyword> keywords = new ArrayList<ProtocolKeyword>(8);
+    private K firstKey;
+    private byte[] encodedFirstKey;
 
     public CommandArgs(RedisCodec<K, V> codec) {
         this.codec = codec;
@@ -43,8 +44,14 @@ public class CommandArgs<K, V> {
     }
 
     public CommandArgs<K, V> addKey(K key) {
-        keys.add(key);
-        return write(codec.encodeKey(key));
+        if (firstKey == null) {
+            firstKey = key;
+        }
+        byte[] b = codec.encodeKey(key);
+        if (encodedFirstKey == null) {
+            encodedFirstKey = b;
+        }
+        return write(b);
     }
 
     public CommandArgs<K, V> addKeys(K... keys) {
@@ -165,6 +172,7 @@ public class CommandArgs<K, V> {
     }
 
     private void write(long value) {
+
         if (value < 10) {
             buffer.put((byte) ('0' + value));
             return;
@@ -190,12 +198,8 @@ public class CommandArgs<K, V> {
         this.buffer = newBuffer;
     }
 
-    public List<K> getKeys() {
-        return keys;
-    }
-
-    public byte[] getEncodedKey(int index) {
-        return codec.encodeKey(keys.get(index));
+    public byte[] getEncodedKey() {
+        return encodedFirstKey;
     }
 
     public List<ProtocolKeyword> getKeywords() {
@@ -206,7 +210,7 @@ public class CommandArgs<K, V> {
     public String toString() {
         final StringBuilder sb = new StringBuilder();
         sb.append(getClass().getSimpleName());
-        sb.append(" [keys=").append(keys);
+        sb.append(" [firstKey=").append(firstKey);
         sb.append(", keywords=").append(keywords);
         sb.append(", buffer=").append(new String(buffer.array()));
         sb.append(']');

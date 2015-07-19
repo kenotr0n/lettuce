@@ -3,27 +3,64 @@ package com.lambdaworks.redis;
 import static com.lambdaworks.redis.protocol.CommandKeyword.*;
 import static com.lambdaworks.redis.protocol.CommandType.*;
 
-import java.io.Serializable;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import com.lambdaworks.redis.codec.RedisCodec;
-import com.lambdaworks.redis.output.*;
-import com.lambdaworks.redis.protocol.*;
+import com.lambdaworks.redis.output.ArrayOutput;
+import com.lambdaworks.redis.output.BooleanListOutput;
+import com.lambdaworks.redis.output.BooleanOutput;
+import com.lambdaworks.redis.output.ByteArrayOutput;
+import com.lambdaworks.redis.output.DateOutput;
+import com.lambdaworks.redis.output.DoubleOutput;
+import com.lambdaworks.redis.output.GeoCoordinatesListOutput;
+import com.lambdaworks.redis.output.GeoWithinListOutput;
+import com.lambdaworks.redis.output.IntegerOutput;
+import com.lambdaworks.redis.output.KeyListOutput;
+import com.lambdaworks.redis.output.KeyOutput;
+import com.lambdaworks.redis.output.KeyScanOutput;
+import com.lambdaworks.redis.output.KeyScanStreamingOutput;
+import com.lambdaworks.redis.output.KeyStreamingChannel;
+import com.lambdaworks.redis.output.KeyStreamingOutput;
+import com.lambdaworks.redis.output.KeyValueOutput;
+import com.lambdaworks.redis.output.KeyValueScanStreamingOutput;
+import com.lambdaworks.redis.output.KeyValueStreamingChannel;
+import com.lambdaworks.redis.output.KeyValueStreamingOutput;
+import com.lambdaworks.redis.output.MapOutput;
+import com.lambdaworks.redis.output.MapScanOutput;
+import com.lambdaworks.redis.output.NestedMultiOutput;
+import com.lambdaworks.redis.output.ScoredValueListOutput;
+import com.lambdaworks.redis.output.ScoredValueScanOutput;
+import com.lambdaworks.redis.output.ScoredValueScanStreamingOutput;
+import com.lambdaworks.redis.output.ScoredValueStreamingChannel;
+import com.lambdaworks.redis.output.ScoredValueStreamingOutput;
+import com.lambdaworks.redis.output.StatusOutput;
+import com.lambdaworks.redis.output.StringListOutput;
+import com.lambdaworks.redis.output.ValueListOutput;
+import com.lambdaworks.redis.output.ValueOutput;
+import com.lambdaworks.redis.output.ValueScanOutput;
+import com.lambdaworks.redis.output.ValueScanStreamingOutput;
+import com.lambdaworks.redis.output.ValueSetOutput;
+import com.lambdaworks.redis.output.ValueStreamingChannel;
+import com.lambdaworks.redis.output.ValueStreamingOutput;
+import com.lambdaworks.redis.protocol.Command;
+import com.lambdaworks.redis.protocol.CommandArgs;
+import com.lambdaworks.redis.protocol.CommandOutput;
+import com.lambdaworks.redis.protocol.RedisCommand;
+import com.lambdaworks.redis.protocol.SetArgs;
 
 /**
- * 
- * @author <a href="mailto:mpaluch@paluch.biz">Mark Paluch</a>
  * @param <K>
  * @param <V>
+ * @author <a href="mailto:mpaluch@paluch.biz">Mark Paluch</a>
  */
 class RedisCommandBuilder<K, V> extends BaseRedisCommandBuilder<K, V> {
 
-    private static final String MUST_NOT_CONTAIN_NULL_ELEMENTS = "must not contain null elements";
-    private static final String MUST_NOT_BE_EMPTY = "must not be empty";
-    private static final String MUST_NOT_BE_NULL = "must not be null";
+    static final String MUST_NOT_CONTAIN_NULL_ELEMENTS = "must not contain null elements";
+    static final String MUST_NOT_BE_EMPTY = "must not be empty";
+    static final String MUST_NOT_BE_NULL = "must not be null";
 
     public RedisCommandBuilder(RedisCodec<K, V> codec) {
         super(codec);
@@ -216,8 +253,12 @@ class RedisCommandBuilder<K, V> extends BaseRedisCommandBuilder<K, V> {
     }
 
     public Command<K, V, Void> debugOom() {
-        CommandArgs<K, V> args = new CommandArgs<K, V>(codec).add("OOM");
-        return createCommand(DEBUG, null, args);
+        return createCommand(DEBUG, null, new CommandArgs<K, V>(codec).add("OOM"));
+    }
+
+    public Command<K, V, String> debugHtstats(int db) {
+        CommandArgs<K, V> args = new CommandArgs<K, V>(codec).add(HTSTATS).add(db);
+        return createCommand(DEBUG, new StatusOutput<K, V>(codec), args);
     }
 
     public Command<K, V, Long> decr(K key) {
@@ -288,6 +329,10 @@ class RedisCommandBuilder<K, V> extends BaseRedisCommandBuilder<K, V> {
 
     public Command<K, V, Boolean> exists(K key) {
         return createCommand(EXISTS, new BooleanOutput<K, V>(codec), key);
+    }
+
+    public Command<K, V, Long> exists(K... keys) {
+        return createCommand(EXISTS, new IntegerOutput<K, V>(codec), new CommandArgs<K, V>(codec).addKeys(keys));
     }
 
     public Command<K, V, Boolean> expire(K key, long seconds) {
@@ -1638,6 +1683,81 @@ class RedisCommandBuilder<K, V> extends BaseRedisCommandBuilder<K, V> {
         return createCommand(CLUSTER, new StatusOutput<K, V>(codec), args);
     }
 
+    public Command<K, V, Long> geoadd(K key, double longitude, double latitude, V member) {
+        CommandArgs<K, V> args = new CommandArgs<K, V>(codec).addKey(key).add(latitude).add(longitude).addValue(member);
+        return createCommand(GEOADD, new IntegerOutput<K, V>(codec), args);
+    }
+
+    public Command<K, V, Long> geoadd(K key, Object[] lngLatMember) {
+
+        assertNotEmpty(lngLatMember, "lngLatMember " + MUST_NOT_BE_EMPTY);
+        assertNoNullElements(lngLatMember, "lngLatMember " + MUST_NOT_CONTAIN_NULL_ELEMENTS);
+        assertTrue(
+                lngLatMember.length % 3 == 0,
+                "lngLatMember.length must be a multiple of 3 and contain a "
+                        + "sequence of longitude1, latitude1, member1, longitude2, latitude2, member2, ... longitudeN, latitudeN, memberN");
+
+        CommandArgs<K, V> args = new CommandArgs<K, V>(codec).addKey(key);
+
+        for (int i = 0; i < lngLatMember.length; i += 3) {
+            args.add((Double) lngLatMember[i]);
+            args.add((Double) lngLatMember[i + 1]);
+            args.addValue((V) lngLatMember[i + 2]);
+        }
+
+        return createCommand(GEOADD, new IntegerOutput<K, V>(codec), args);
+    }
+
+    public Command<K, V, Set<V>> georadius(K key, double longitude, double latitude, double distance, String unit) {
+        CommandArgs<K, V> args = new CommandArgs<K, V>(codec).addKey(key).add(longitude).add(latitude).add(distance).add(unit);
+        return createCommand(GEORADIUS, new ValueSetOutput<K, V>(codec), args);
+    }
+
+    public Command<K, V, List<GeoWithin<V>>> georadius(K key, double longitude, double latitude, double distance, String unit,
+            GeoArgs geoArgs) {
+
+        assertNotNull(geoArgs, "geoArgs must not be null");
+        CommandArgs<K, V> args = new CommandArgs<K, V>(codec).addKey(key).add(longitude).add(latitude).add(distance).add(unit);
+
+        geoArgs.build(args);
+
+        return createCommand(GEORADIUS, new GeoWithinListOutput<K, V>(codec, geoArgs.isWithDistance(), geoArgs.isWithHash(),
+                geoArgs.isWithCoordinates()), args);
+    }
+
+    public Command<K, V, Set<V>> georadiusbymember(K key, V member, double distance, String unit) {
+        CommandArgs<K, V> args = new CommandArgs<K, V>(codec).addKey(key).addValue(member).add(distance).add(unit);
+        return createCommand(GEORADIUSBYMEMBER, new ValueSetOutput<K, V>(codec), args);
+    }
+
+    public Command<K, V, List<GeoWithin<V>>> georadiusbymember(K key, V member, double distance, String unit, GeoArgs geoArgs) {
+        CommandArgs<K, V> args = new CommandArgs<K, V>(codec).addKey(key).addValue(member).add(distance).add(unit);
+        assertNotNull(geoArgs, "geoArgs must not be null");
+
+        return createCommand(
+                GEORADIUSBYMEMBER,
+                new GeoWithinListOutput<K, V>(codec, geoArgs.isWithDistance(), geoArgs.isWithHash(), geoArgs
+                        .isWithCoordinates()), args);
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    public Command<K, V, List<GeoCoordinates>> geopos(K key, V[] members) {
+        CommandArgs<K, V> args = new CommandArgs<K, V>(codec).addKey(key).addValues(members);
+
+        return (Command) createCommand(GEOPOS, new GeoCoordinatesListOutput<K, V>(codec), args);
+    }
+
+    public Command<K, V, Double> geodist(K key, V from, V to, GeoArgs.Unit unit) {
+        CommandArgs<K, V> args = new CommandArgs<K, V>(codec).addKey(key).addValues(from, to);
+
+        if (unit != null) {
+            args.add(unit.name());
+        }
+
+        return createCommand(GEODIST, new DoubleOutput<K, V>(codec), args);
+
+    }
+
     /**
      * Assert that a string is not empty, it must not be {@code null} and it must not be empty.
      *
@@ -1653,7 +1773,7 @@ class RedisCommandBuilder<K, V> extends BaseRedisCommandBuilder<K, V> {
 
     /**
      * Assert that an object is not {@code null} .
-     * 
+     *
      * @param object the object to check
      * @param message the exception message to use if the assertion fails
      * @throws IllegalArgumentException if the object is {@code null}
@@ -1666,7 +1786,7 @@ class RedisCommandBuilder<K, V> extends BaseRedisCommandBuilder<K, V> {
 
     /**
      * Assert that an array has elements; that is, it must not be {@code null} and must have at least one element.
-     * 
+     *
      * @param array the array to check
      * @param message the exception message to use if the assertion fails
      * @throws IllegalArgumentException if the object array is {@code null} or has no elements
@@ -1692,7 +1812,7 @@ class RedisCommandBuilder<K, V> extends BaseRedisCommandBuilder<K, V> {
 
     /**
      * Assert that an array has no null elements.
-     * 
+     *
      * @param array the array to check
      * @param message the exception message to use if the assertion fails
      * @throws IllegalArgumentException if the object array contains a {@code null} element
@@ -1709,7 +1829,7 @@ class RedisCommandBuilder<K, V> extends BaseRedisCommandBuilder<K, V> {
 
     /**
      * Assert that {@code value} is {@literal true}.
-     * 
+     *
      * @param value the value to check
      * @param message the exception message to use if the assertion fails
      * @throws IllegalArgumentException if the object array contains a {@code null} element

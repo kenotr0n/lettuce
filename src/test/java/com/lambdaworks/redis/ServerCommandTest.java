@@ -2,21 +2,17 @@
 
 package com.lambdaworks.redis;
 
-import static com.google.code.tempusfugit.temporal.Duration.seconds;
-import static com.google.code.tempusfugit.temporal.Timeout.timeout;
-import static com.lambdaworks.redis.TestSettings.host;
-import static com.lambdaworks.redis.TestSettings.port;
+import static com.google.code.tempusfugit.temporal.Duration.*;
+import static com.google.code.tempusfugit.temporal.Timeout.*;
+import static com.lambdaworks.redis.TestSettings.*;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.CoreMatchers.*;
 import static org.junit.Assert.assertThat;
 
 import java.util.Date;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import org.junit.Test;
 
 import com.google.code.tempusfugit.temporal.Condition;
 import com.google.code.tempusfugit.temporal.WaitFor;
@@ -25,7 +21,11 @@ import com.lambdaworks.redis.models.command.CommandDetailParser;
 import com.lambdaworks.redis.models.role.RedisInstance;
 import com.lambdaworks.redis.models.role.RoleParser;
 import com.lambdaworks.redis.protocol.CommandType;
+import org.junit.FixMethodOrder;
+import org.junit.Test;
+import org.junit.runners.MethodSorters;
 
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class ServerCommandTest extends AbstractCommandTest {
     @Test
     public void bgrewriteaof() throws Exception {
@@ -191,6 +191,13 @@ public class ServerCommandTest extends AbstractCommandTest {
     }
 
     @Test
+    public void debugHtstats() throws Exception {
+        redis.set(key, value);
+        String result = redis.debugHtstats(0);
+        assertThat(result).contains("table size");
+    }
+
+    @Test
     public void flushall() throws Exception {
         redis.set(key, value);
         assertThat(redis.flushall()).isEqualTo("OK");
@@ -257,7 +264,7 @@ public class ServerCommandTest extends AbstractCommandTest {
             assertThat(redisInstance.getRole()).isEqualTo(RedisInstance.Role.MASTER);
         } finally {
             connection.close();
-            redisClient.shutdown(0, 0, TimeUnit.MILLISECONDS);
+            FastShutdown.shutdown(redisClient);
         }
     }
 
@@ -300,7 +307,7 @@ public class ServerCommandTest extends AbstractCommandTest {
     public void slowlog() throws Exception {
         long start = System.currentTimeMillis() / 1000;
 
-        assertThat(redis.configSet("slowlog-log-slower-than", "1")).isEqualTo("OK");
+        assertThat(redis.configSet("slowlog-log-slower-than", "0")).isEqualTo("OK");
         assertThat(redis.slowlogReset()).isEqualTo("OK");
         redis.set(key, value);
 
@@ -324,7 +331,7 @@ public class ServerCommandTest extends AbstractCommandTest {
         assertThat(redis.slowlogGet(1)).hasSize(1);
         assertThat((long) redis.slowlogLen()).isGreaterThanOrEqualTo(4);
 
-        redis.configSet("slowlog-log-slower-than", "0");
+        redis.configSet("slowlog-log-slower-than", "10000");
     }
 
     @Test

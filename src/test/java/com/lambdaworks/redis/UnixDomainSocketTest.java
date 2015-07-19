@@ -24,7 +24,7 @@ public class UnixDomainSocketTest {
     private static RedisClient sentinelClient;
 
     @Rule
-    public SentinelRule sentinelRule = new SentinelRule(sentinelClient, 26379, 26380);
+    public SentinelRule sentinelRule = new SentinelRule(sentinelClient, false, 26379, 26380);
 
     protected Logger log = Logger.getLogger(getClass());
 
@@ -38,7 +38,7 @@ public class UnixDomainSocketTest {
 
     @AfterClass
     public static void shutdownClient() {
-        sentinelClient.shutdown(0, 0, TimeUnit.MILLISECONDS);
+        FastShutdown.shutdown(sentinelClient);
     }
 
     @Before
@@ -60,7 +60,7 @@ public class UnixDomainSocketTest {
         someRedisAction(connection);
         connection.close();
 
-        redisClient.shutdown();
+        FastShutdown.shutdown(redisClient);
     }
 
     private void linuxOnly() {
@@ -100,7 +100,7 @@ public class UnixDomainSocketTest {
         assertThat(sentinelConnection.ping().get()).isEqualTo("PONG");
         sentinelConnection.close();
 
-        redisClient.shutdown();
+        FastShutdown.shutdown(redisClient);
     }
 
     @Test
@@ -125,7 +125,7 @@ public class UnixDomainSocketTest {
         } catch (RedisConnectionException e) {
             assertThat(e).hasMessageContaining("You cannot mix unix domain socket and IP socket URI's");
         } finally {
-            redisClient.shutdown();
+            FastShutdown.shutdown(redisClient);
         }
 
     }

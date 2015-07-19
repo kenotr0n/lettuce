@@ -1,6 +1,6 @@
 package com.lambdaworks.redis;
 
-import static com.google.common.base.Preconditions.*;
+import static com.google.common.base.Preconditions.checkState;
 
 import java.net.SocketAddress;
 import java.util.List;
@@ -8,13 +8,18 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.common.base.Supplier;
 import com.google.common.collect.Lists;
+import com.lambdaworks.redis.protocol.CommandEncoder;
 import com.lambdaworks.redis.protocol.CommandHandler;
 import com.lambdaworks.redis.protocol.ConnectionWatchdog;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.ChannelHandler;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.EventLoopGroup;
 import io.netty.channel.group.ChannelGroup;
 import io.netty.util.Timer;
+import io.netty.util.concurrent.EventExecutorGroup;
 
 /**
  * @author <a href="mailto:mpaluch@paluch.biz">Mark Paluch</a>
@@ -30,6 +35,7 @@ public class ConnectionBuilder {
     private Timer timer;
     private Bootstrap bootstrap;
     private ClientOptions clientOptions;
+    private EventExecutorGroup workerPool;
     private long timeout;
     private TimeUnit timeUnit;
 
@@ -63,6 +69,11 @@ public class ConnectionBuilder {
 
     public ConnectionBuilder clientOptions(ClientOptions clientOptions) {
         this.clientOptions = clientOptions;
+        return this;
+    }
+
+    public ConnectionBuilder workerPool(EventExecutorGroup workerPool) {
+        this.workerPool = workerPool;
         return this;
     }
 
@@ -107,7 +118,8 @@ public class ConnectionBuilder {
             checkState(timer != null, "timer must be set for autoReconnect=true");
             checkState(socketAddressSupplier != null, "socketAddressSupplier must be set for autoReconnect=true");
 
-            ConnectionWatchdog watchdog = new ConnectionWatchdog(clientOptions, bootstrap, timer, socketAddressSupplier);
+            ConnectionWatchdog watchdog = new ConnectionWatchdog(clientOptions, bootstrap, timer, workerPool,
+                    socketAddressSupplier);
 
             watchdog.setListenOnChannelInactive(true);
             handlers.add(watchdog);
@@ -116,7 +128,7 @@ public class ConnectionBuilder {
         connection.setOptions(clientOptions);
 
         handlers.add(new ChannelGroupListener(channelGroup));
-
+        handlers.add(new CommandEncoder());
         handlers.add(commandHandler);
         handlers.add(connection);
         handlers.add(new ConnectionEventTrigger(connectionEvents, connection));

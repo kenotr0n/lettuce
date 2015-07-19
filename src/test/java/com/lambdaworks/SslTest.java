@@ -8,6 +8,7 @@ import java.io.File;
 import java.security.cert.CertificateException;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -33,7 +34,7 @@ public class SslTest {
 
     @AfterClass
     public static void afterClass() {
-        redisClient.shutdown();
+        FastShutdown.shutdown(redisClient);
     }
 
     @Test
@@ -87,7 +88,7 @@ public class SslTest {
         RedisPubSubConnection<String, String> connection = redisClient.connectPubSub(redisUri);
         connection.subscribe("c1");
         connection.subscribe("c2");
-        Thread.sleep(100);
+        Thread.sleep(200);
 
         RedisPubSubConnection<String, String> connection2 = redisClient.connectPubSub(redisUri);
 
@@ -107,10 +108,12 @@ public class SslTest {
 
         RedisURI redisUri = RedisURI.Builder.redis(host(), sslPort()).withSsl(true).withVerifyPeer(false).build();
 
+        redisClient.setOptions(new ClientOptions.Builder().suspendReconnectOnProtocolFailure(true).build());
+
         RedisPubSubConnection<String, String> connection = redisClient.connectPubSub(redisUri);
         connection.subscribe("c1");
         connection.subscribe("c2");
-        Thread.sleep(100);
+        Thread.sleep(200);
 
         RedisPubSubConnection<String, String> connection2 = redisClient.connectPubSub(redisUri);
         assertThat(connection2.pubsubChannels().get()).contains("c1", "c2");
@@ -135,6 +138,7 @@ public class SslTest {
             assertThat(e).hasCauseInstanceOf(DecoderException.class);
             assertThat(e).hasRootCauseInstanceOf(CertificateException.class);
         }
+
         assertThat(defectFuture.isDone()).isEqualTo(true);
 
         connection.close();

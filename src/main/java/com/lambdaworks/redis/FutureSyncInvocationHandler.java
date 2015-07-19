@@ -4,7 +4,11 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.concurrent.TimeUnit;
 
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
 import com.google.common.reflect.AbstractInvocationHandler;
+import com.lambdaworks.redis.protocol.Command;
 import com.lambdaworks.redis.protocol.RedisCommand;
 
 /**
@@ -21,11 +25,20 @@ class FutureSyncInvocationHandler<K, V> extends AbstractInvocationHandler {
     private final RedisChannelHandler<K, V> connection;
     protected long timeout;
     protected TimeUnit unit;
+    private LoadingCache<Method, Method> methodCache;
 
-    public FutureSyncInvocationHandler(RedisChannelHandler<K, V> connection) {
+    public FutureSyncInvocationHandler(final RedisChannelHandler<K, V> connection) {
         this.connection = connection;
         this.timeout = connection.timeout;
         this.unit = connection.unit;
+
+        methodCache = CacheBuilder.newBuilder().build(new CacheLoader<Method, Method>() {
+            @Override
+            public Method load(Method key) throws Exception {
+                return connection.getClass().getMethod(key.getName(), key.getParameterTypes());
+            }
+        });
+
     }
 
     /**
@@ -44,19 +57,27 @@ class FutureSyncInvocationHandler<K, V> extends AbstractInvocationHandler {
                 return null;
             }
 
-            Method targetMethod = connection.getClass().getMethod(method.getName(), method.getParameterTypes());
-
+            Method targetMethod = methodCache.get(method);
             Object result = targetMethod.invoke(connection, args);
 
             if (result instanceof RedisCommand) {
-                RedisCommand<?, ?, ?> command = (RedisCommand<?, ?, ?>) result;
+                RedisCommand<?, ?, ?> redisCommand = (RedisCommand<?, ?, ?>) result;
                 if (!method.getName().equals("exec") && !method.getName().equals("multi")) {
                     if (connection instanceof RedisAsyncConnectionImpl && ((RedisAsyncConnectionImpl) connection).isMulti()) {
                         return null;
                     }
                 }
 
-                return LettuceFutures.await(command, timeout, unit);
+                Object awaitedResult = LettuceFutures.await(redisCommand, timeout, unit);
+
+                if (redisCommand instanceof Command) {
+                    Command<?, ?, ?> command = (Command<?, ?, ?>) redisCommand;
+                    if (command.getException() != null) {
+                        throw new RedisException(command.getException());
+                    }
+                }
+
+                return awaitedResult;
             }
 
             if (result instanceof RedisClusterAsyncConnection) {

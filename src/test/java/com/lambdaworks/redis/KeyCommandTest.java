@@ -40,6 +40,14 @@ public class KeyCommandTest extends AbstractCommandTest {
     }
 
     @Test
+    public void existsVariadic() throws Exception {
+        assertThat(redis.exists(key, "key2", "key3")).isEqualTo(0);
+        redis.set(key, value);
+        redis.set("key2", value);
+        assertThat(redis.exists(key, "key2", "key3")).isEqualTo(2);
+    }
+
+    @Test
     public void expire() throws Exception {
         assertThat(redis.expire(key, 10)).isFalse();
         redis.set(key, value);
@@ -53,7 +61,8 @@ public class KeyCommandTest extends AbstractCommandTest {
         assertThat(redis.expireat(key, expiration)).isFalse();
         redis.set(key, value);
         assertThat(redis.expireat(key, expiration)).isTrue();
-        assertThat(redis.ttl(key) >= 9).isTrue();
+
+        assertThat(redis.ttl(key)).isGreaterThanOrEqualTo(8);
     }
 
     @Test
@@ -109,13 +118,13 @@ public class KeyCommandTest extends AbstractCommandTest {
     @Test
     public void objectIdletime() throws Exception {
         redis.set(key, value);
-        assertThat((long) redis.objectIdletime(key)).isEqualTo(0);
+        assertThat((long) redis.objectIdletime(key)).isLessThan(2);
     }
 
     @Test
     public void objectRefcount() throws Exception {
         redis.set(key, value);
-        assertThat(redis.objectRefcount(key) > 0).isTrue();
+        assertThat(redis.objectRefcount(key)).isGreaterThan(0);
     }
 
     @Test
@@ -132,7 +141,7 @@ public class KeyCommandTest extends AbstractCommandTest {
         assertThat(redis.pexpire(key, 10)).isFalse();
         redis.set(key, value);
         assertThat(redis.pexpire(key, 10)).isTrue();
-        assertThat(redis.pttl(key) <= 10 && redis.pttl(key) > 0).isTrue();
+        assertThat(redis.pttl(key)).isGreaterThan(0).isLessThanOrEqualTo(10);
     }
 
     @Test
@@ -141,7 +150,7 @@ public class KeyCommandTest extends AbstractCommandTest {
         assertThat(redis.pexpireat(key, expiration)).isFalse();
         redis.set(key, value);
         assertThat(redis.pexpireat(key, expiration)).isTrue();
-        assertThat(redis.pttl(key) <= 100 && redis.pttl(key) > 0).isTrue();
+        assertThat(redis.pttl(key)).isGreaterThan(0).isLessThanOrEqualTo(100);
     }
 
     @Test
@@ -149,8 +158,8 @@ public class KeyCommandTest extends AbstractCommandTest {
         assertThat((long) redis.pttl(key)).isEqualTo(-2);
         redis.set(key, value);
         assertThat((long) redis.pttl(key)).isEqualTo(-1);
-        redis.pexpire(key, 10);
-        assertThat(redis.pttl(key) <= 10 && redis.pttl(key) > 0).isTrue();
+        redis.pexpire(key, 50);
+        assertThat(redis.pttl(key)).isGreaterThan(0).isLessThanOrEqualTo(50);
     }
 
     @Test
@@ -177,12 +186,6 @@ public class KeyCommandTest extends AbstractCommandTest {
         redis.rename(key, key + "X");
     }
 
-    @Test(expected = RedisException.class)
-    public void renameIdenticalKeys() throws Exception {
-        redis.set(key, value);
-        redis.rename(key, key);
-    }
-
     @Test
     public void renamenx() throws Exception {
         redis.set(key, value);
@@ -197,10 +200,10 @@ public class KeyCommandTest extends AbstractCommandTest {
         redis.renamenx(key, key + "X");
     }
 
-    @Test(expected = RedisException.class)
+    @Test
     public void renamenxIdenticalKeys() throws Exception {
         redis.set(key, value);
-        redis.renamenx(key, key);
+        assertThat(redis.renamenx(key, key)).isFalse();
     }
 
     @Test
@@ -216,8 +219,8 @@ public class KeyCommandTest extends AbstractCommandTest {
         redis.del(key);
         assertThat(redis.restore(key, 1000, bytes)).isEqualTo("OK");
         assertThat(redis.get(key)).isEqualTo(value);
-        long ttl = redis.pttl(key);
-        assertThat(ttl <= 1000 && ttl >= 0).isTrue();
+
+        assertThat(redis.pttl(key)).isGreaterThan(0).isLessThanOrEqualTo(1000);
     }
 
     @Test
